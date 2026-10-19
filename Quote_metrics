@@ -1,0 +1,64 @@
+import sqlite3
+from pathlib import Path
+
+
+fichier_base = Path(__file__).resolve().parent / "bond_curve.db"
+
+with sqlite3.connect(fichier_base) as connexion:
+    connexion.row_factory = sqlite3.Row
+
+    cotations = connexion.execute(
+        """
+        SELECT
+            asset_symbol,
+            event_time,
+            bid_price,
+            ask_price,
+            bid_quantity,
+            ask_quantity
+        FROM market_ticks
+        WHERE event_type = 'quote'
+          AND bid_quantity IS NOT NULL
+          AND ask_quantity IS NOT NULL
+        ORDER BY event_time DESC
+        """
+    ).fetchall()
+
+# Garder seulement la cotation la plus récente de chaque actif
+dernieres_cotations = {}
+
+for cotation in cotations:
+    symbole = cotation["asset_symbol"]
+
+    if symbole not in dernieres_cotations:
+        dernieres_cotations[symbole] = cotation
+
+if not dernieres_cotations:
+    print("Aucune cotation avec quantités trouvée.")
+else:
+    for symbole, cotation in dernieres_cotations.items():
+        quantite_achat = cotation["bid_quantity"]
+        quantite_vente = cotation["ask_quantity"]
+        total = quantite_achat + quantite_vente
+
+        if total == 0:
+            desequilibre = 0
+        else:
+            desequilibre = (
+                (quantite_achat - quantite_vente) / total
+            ) * 100
+
+        print(f"Actif : {symbole}")
+        print(f"Heure UTC : {cotation['event_time']}")
+        print(f"Quantité à l'achat : {quantite_achat}")
+        print(f"Quantité à la vente : {quantite_vente}")
+        print(f"Déséquilibre achat/vente : {desequilibre:.2f} %")
+
+        if desequilibre > 0:
+            print("La quantité affichée à l'achat est supérieure.")
+        elif desequilibre < 0:
+            print("La quantité affichée à la vente est supérieure.")
+        else:
+            print("Les quantités affichées sont égales.")
+
+        print()
